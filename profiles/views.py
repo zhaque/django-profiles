@@ -269,10 +269,15 @@ def profile_detail(request, username, public_profile_field=None,
     try:
         profile_obj = user.get_profile()
     except ObjectDoesNotExist:
+        if request.user == user: #If we are trying to view our own nonexistent profile, redirect to profile creation
+            return HttpResponseRedirect(reverse(create_profile))
         raise Http404
     if public_profile_field is not None and \
        not getattr(profile_obj, public_profile_field):
-        profile_obj = None
+       if user == request.user: #If the user is trying to view their own (invisible) profile
+           return HttpResponseRedirect(reverse(edit_profile)) #Let them edit.
+       else: #Otherwise return no profile object.
+           profile_obj = None
     
     if extra_context is None:
         extra_context = {}
