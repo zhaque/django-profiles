@@ -8,7 +8,7 @@ from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.urlresolvers import reverse
 from django.http import Http404
-from django.http import HttpResponseRedirect
+from django.shortcuts import redirect
 from django.shortcuts import get_object_or_404
 from django.shortcuts import render_to_response
 from django.template import RequestContext
@@ -17,7 +17,12 @@ from django.views.generic.list_detail import object_list
 from profiles import utils
 
 
-def create_profile(request, form_class=None, success_url=None,
+def default_success_url(profile):
+    return reverse('profiles_profile_detail',
+                   kwargs={'username': profile.user.username})
+
+
+def create_profile(request, form_class=None, success_url=default_success_url,
                    template_name='profiles/create_profile.html',
                    extra_context=None):
     """
@@ -58,8 +63,10 @@ def create_profile(request, form_class=None, success_url=None,
         The URL to redirect to after successful profile creation. If
         this argument is not supplied, this will default to the URL of
         :view:`profiles.views.profile_detail` for the newly-created
-        profile object.
-    
+        profile object. If success_url is callable, it will be called
+        with newly-created profile objects as argument.
+        Used through `django.shortcuts.redirect`.
+
     ``template_name``
         The template to use when displaying the profile-creation
         form. If not supplied, this will default to
@@ -78,22 +85,11 @@ def create_profile(request, form_class=None, success_url=None,
     """
     try:
         profile_obj = request.user.get_profile()
-        return HttpResponseRedirect(reverse('profiles_edit_profile'))
+        return redirect('profiles_edit_profile')
     except ObjectDoesNotExist:
         pass
     
-    #
-    # We set up success_url here, rather than as the default value for
-    # the argument. Trying to do it as the argument's default would
-    # mean evaluating the call to reverse() at the time this module is
-    # first imported, which introduces a circular dependency: to
-    # perform the reverse lookup we need access to profiles/urls.py,
-    # but profiles/urls.py in turn imports this module.
-    #
     
-    if success_url is None:
-        success_url = reverse('profiles_profile_detail',
-                              kwargs={ 'username': request.user.username })
     if form_class is None:
         form_class = utils.get_profile_form()
     if request.method == 'POST':
@@ -104,7 +100,10 @@ def create_profile(request, form_class=None, success_url=None,
             profile_obj.save()
             if hasattr(form, 'save_m2m'):
                 form.save_m2m()
-            return HttpResponseRedirect(success_url)
+            if callable(success_url):
+                success_url = success_url(profile_obj)
+
+            return redirect(success_url)
     else:
         form = form_class()
     
@@ -119,7 +118,7 @@ def create_profile(request, form_class=None, success_url=None,
                               context_instance=context)
 create_profile = login_required(create_profile)
 
-def edit_profile(request, form_class=None, success_url=None,
+def edit_profile(request, form_class=None, success_url=default_success_url,
                  template_name='profiles/edit_profile.html',
                  extra_context=None):
     """
@@ -154,7 +153,9 @@ def edit_profile(request, form_class=None, success_url=None,
         The URL to redirect to following a successful edit. If not
         specified, this will default to the URL of
         :view:`profiles.views.profile_detail` for the profile object
-        being edited.
+        being edited. If success_url is callable, it will be called
+        with newly-created profile objects as argument.
+        Used through `django.shortcuts.redirect`.
     
     ``template_name``
         The template to use when displaying the profile-editing
@@ -178,24 +179,18 @@ def edit_profile(request, form_class=None, success_url=None,
     try:
         profile_obj = request.user.get_profile()
     except ObjectDoesNotExist:
-        return HttpResponseRedirect(reverse('profiles_create_profile'))
+        return redirect('profiles_create_profile')
     
-    #
-    # See the comment in create_profile() for discussion of why
-    # success_url is set up here, rather than as a default value for
-    # the argument.
-    #
-    
-    if success_url is None:
-        success_url = reverse('profiles_profile_detail',
-                              kwargs={ 'username': request.user.username })
     if form_class is None:
         form_class = utils.get_profile_form()
     if request.method == 'POST':
         form = form_class(data=request.POST, files=request.FILES, instance=profile_obj)
         if form.is_valid():
-            form.save()
-            return HttpResponseRedirect(success_url)
+            profile_obj = form.save()
+            if callable(success_url):
+                success_url = success_url(profile_obj)
+
+            return redirect(success_url)
     else:
         form = form_class(instance=profile_obj)
     
